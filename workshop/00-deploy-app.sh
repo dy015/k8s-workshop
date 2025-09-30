@@ -26,6 +26,27 @@ echo "  Deploying Workshop Application"
 echo "=============================================="
 echo ""
 
+# Check if StorageClass exists
+log_info "Checking for StorageClass..."
+if ! kubectl get storageclass local-path &> /dev/null; then
+    log_error "StorageClass 'local-path' not found!"
+    echo ""
+    log_info "Installing local-path storage provisioner..."
+    
+    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.24/deploy/local-path-storage.yaml
+    
+    log_info "Waiting for provisioner to be ready..."
+    kubectl wait --for=condition=ready pod -l app=local-path-provisioner -n local-path-storage --timeout=120s
+    
+    log_info "Setting as default StorageClass..."
+    kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+    
+    log_success "StorageClass installed and configured"
+    echo ""
+else
+    log_success "StorageClass 'local-path' found"
+fi
+
 # Create namespace
 log_info "Creating namespace: $NAMESPACE"
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
@@ -51,6 +72,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: local-path
   resources:
     requests:
       storage: 1Gi

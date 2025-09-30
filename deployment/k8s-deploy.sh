@@ -451,6 +451,26 @@ install_cni() {
     log_info "You can check status with: kubectl get pods -n kube-system"
 }
 
+install_storage_provisioner() {
+    log_info "Installing local-path storage provisioner..."
+    
+    # Install local-path provisioner
+    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.24/deploy/local-path-storage.yaml > /dev/null 2>&1
+    
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to install local-path provisioner"
+        exit 1
+    fi
+    
+    log_info "Waiting for storage provisioner to be ready..."
+    kubectl wait --for=condition=ready pod -l app=local-path-provisioner -n local-path-storage --timeout=120s > /dev/null 2>&1
+    
+    # Set as default storage class
+    kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' > /dev/null 2>&1
+    
+    log_success "Storage provisioner installed and configured"
+}
+
 remove_taint() {
     log_info "Removing control-plane taint for single-node cluster..."
     
@@ -533,6 +553,13 @@ cleanup_kubernetes() {
     rm -rf /run/containerd
     rm -rf /var/log/pods
     rm -rf /var/log/containers
+    
+    # Remove local-path storage provisioner data
+    log_info "Removing local-path storage data..."
+    if [[ -d /opt/local-path-provisioner ]]; then
+        rm -rf /opt/local-path-provisioner
+        log_success "Local-path storage data removed"
+    fi
     
     # Remove user kubectl config
     if [[ -n "$SUDO_USER" ]]; then
@@ -788,6 +815,7 @@ do_install() {
     initialize_cluster
     configure_kubectl
     install_cni
+    install_storage_provisioner
     remove_taint
     
     echo ""
